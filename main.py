@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import pandas as pd
 import torch.optim.adam
+from torchvision import datasets, transforms
+
 
 #data
 raw_df = pd.read_csv('train.csv')
@@ -45,8 +47,8 @@ for i in range(100):
     result = torch.argmax(predict, axis=1)
     train_accurate = torch.mean((result==train_label).to(torch.float))
     loss = lossfunction(predict, train_label)
-    optimizer.step()
     loss.backward()
+    optimizer.step()
     print('train loss:{} train_accurate:{}'.format(loss.item(), train_accurate.item()))
 
     optimizer.zero_grad()
