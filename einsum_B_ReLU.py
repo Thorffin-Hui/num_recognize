@@ -9,7 +9,7 @@ import time
 import psutil
 
 from torch.utils.tensorboard import SummaryWriter
-writer = SummaryWriter('runs/model.nn')
+writer = SummaryWriter('runs/einsum_Bias_ReLU')
 
 start_time = time.time()  # 记录开始时间
 
@@ -27,42 +27,78 @@ test_dataset = datasets.MNIST(root='./data', train=False, download=True, transfo
 train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
-#model structure
+# model structure
 # 模型结构
-model = nn.Sequential(
-    nn.Flatten(),  # 展平输入数据，将 (batch_size, 28, 28) 变为 (batch_size, 784)
-    nn.Linear(28*28, 444),  # 28*28 = 784，这里输入到第一层的大小应该是 784
-    nn.ReLU(),
-    nn.Linear(444, 512),
-    nn.ReLU(),
-    nn.Linear(512, 512),
-    nn.ReLU(),
-    nn.Linear(512, 10),
-).to(device)
+# model = nn.Sequential(
+#     nn.Flatten(),  # 展平输入数据，将 (batch_size, 28, 28) 变为 (batch_size, 784)
+#     nn.Linear(28*28, 444),  # 28*28 = 784，这里输入到第一层的大小应该是 784
+#     nn.ReLU(),
+#     nn.Linear(444, 512),
+#     nn.ReLU(),
+#     nn.Linear(512, 512),
+#     nn.ReLU(),
+#     nn.Linear(512, 10),
+# ).to(device)
 
+import opt_einsum  as oe
 
 #training
+W1 = torch.nn.Parameter(torch.randn(784, 444, requires_grad=True).to(device))
+W2 = torch.nn.Parameter(torch.randn(444, 512, requires_grad=True).to(device))
+W3 = torch.nn.Parameter(torch.randn(512, 512, requires_grad=True).to(device))
+W4 = torch.nn.Parameter(torch.randn(512, 10, requires_grad=True).to(device))
+
+# 假设 bias1, bias2, ..., bias5 是对应每一层的偏置
+bias1 = torch.nn.Parameter(torch.randn(W1.size(1), requires_grad=True).to(device))
+bias2 = torch.nn.Parameter(torch.randn(W2.size(1), requires_grad=True).to(device))
+bias3 = torch.nn.Parameter(torch.randn(W3.size(1), requires_grad=True).to(device))
+bias4 = torch.nn.Parameter(torch.randn(W4.size(1), requires_grad=True).to(device))
+
+
 
 lossfunction = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(params=model.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(params=[W1,W2,W3,W4,bias1,bias2,bias3,bias4], lr=0.001)
 
 for epoch in range(100):
-
     epoch_start_time = time.time()  # 每个epoch开始的时间
     # 记录每个 epoch 的内存和GPU占用情况
     cpu_memory_before = psutil.virtual_memory().percent  # 获取CPU内存使用百分比
     gpu_memory_before = torch.cuda.memory_allocated()  # 获取当前GPU内存占用量 (字节)
 
-    model.train()  # 将模型设置为训练模式
     running_loss = 0.0
     correct_train = 0
     total_train = 0
 
     for inputs, labels in train_loader:
+        
         inputs, labels = inputs.to(device), labels.to(device)
 
+        inputs=inputs.view(-1,784)
         optimizer.zero_grad()
-        outputs = model(inputs)
+        
+        # path, path_info = oe.contract_path('ab,bc,cd,de,ef->af',inputs,W1,W2,W3,W4)
+        # print(path)
+        # print(path_info)
+       # 步骤 1: inputs 和 W1 矩阵相乘
+        step1 = torch.einsum('ab,bc->ac', inputs, W1)  # 矩阵乘法
+        step1 = step1 + bias1  # 加上偏置
+        step1 = torch.relu(step1)  # 添加ReLU激活函数
+
+        # 步骤 2: step1 和 W2 矩阵相乘
+        step2 = torch.einsum('ac,cd->ad', step1, W2)  # 矩阵乘法
+        step2 = step2 + bias2  # 加上偏置
+        step2 = torch.relu(step2)
+
+        # 步骤 3: step2 和 W3 矩阵相乘
+        step3 = torch.einsum('ad,de->ae', step2, W3)  # 矩阵乘法
+        step3 = step3 + bias3  # 加上偏置
+        step3 = torch.relu(step3)
+
+        # 步骤 4: step3 和 W4 矩阵相乘
+        step4 = torch.einsum('ae,ef->af', step3, W4)  # 矩阵乘法
+        step4 = step4 + bias4  # 加上偏置
+        outputs = step4
+ 
         loss = lossfunction(outputs, labels)
         loss.backward()
         optimizer.step()
@@ -97,35 +133,48 @@ for epoch in range(100):
     writer.add_scalar('GPU Memory Usage (MB)/train', gpu_memory_usage, epoch) 
     writer.add_scalar('GPU Usage (%)/train', gpu_usage, epoch)
     
-
     print(f"Epoch {epoch + 1}/{100} - train loss: {running_loss / len(train_loader)} train accuracy: {train_accuracy}")
-
+    
 end_time = time.time()  # 记录结束时间
 total_duration = end_time - start_time
 print(f"Total training time: {total_duration} seconds")
 
-# 在整个训练结束后进行测试
-model.eval()  # 将模型设置为评估模式
-test_loss = 0.0
+# --------------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------------
+
+start_time = time.time()
+
 correct_test = 0
 total_test = 0
+running_test_loss = 0.0
 
-for epoch in range(5):
-    with torch.no_grad():  # 在测试时不需要计算梯度
+for epoch in range(10):
+    with torch.no_grad():  # No need to compute gradients during testing
         for inputs, labels in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
-
-            outputs = model(inputs)
+            inputs = inputs.view(-1, 784)
+            
+            outputs = oe.contract('ab,bc,cd,de,ef->af', inputs, W1, W2, W3, W4)
             loss = lossfunction(outputs, labels)
-            test_loss += loss.item()
-
+            
             # 计算测试准确率
             _, predicted = torch.max(outputs, 1)
             total_test += labels.size(0)
             correct_test += (predicted == labels).sum().item()
+            
+            running_test_loss += loss.item()
 
-    test_accuracy = correct_test / total_test
-    print(f"Test loss: {test_loss / len(test_loader)}")
-    print(f"Test accuracy: {test_accuracy}")
-    writer.add_scalar('Loss/test', test_loss / len(test_loader), epoch)
-    writer.add_scalar('Accuracy/test', test_accuracy, epoch)
+test_accuracy = correct_test / total_test
+test_loss = running_test_loss / len(test_loader)
+
+# 记录测试信息到 TensorBoard
+writer.add_scalar('Loss/test', test_loss, epoch)
+writer.add_scalar('Accuracy/test', test_accuracy, epoch)
+
+print(f"Test loss: {test_loss} test accuracy: {test_accuracy}")
+
+writer.close()
+end_time = time.time()  # 记录结束时间
+total_duration = end_time - start_time
+print(f"Total test time: {total_duration} seconds")
