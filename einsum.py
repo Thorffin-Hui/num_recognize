@@ -123,7 +123,7 @@ correct_test = 0
 total_test = 0
 running_test_loss = 0.0
 
-for epoch in range(10):
+for epoch in range(5):
     with torch.no_grad():  # No need to compute gradients during testing
         for inputs, labels in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
@@ -139,14 +139,14 @@ for epoch in range(10):
             
             running_test_loss += loss.item()
 
-test_accuracy = correct_test / total_test
-test_loss = running_test_loss / len(test_loader)
+            test_accuracy = correct_test / total_test
+            test_loss = running_test_loss / len(test_loader)
 
-# 记录测试信息到 TensorBoard
-writer.add_scalar('Loss/test', test_loss, epoch)
-writer.add_scalar('Accuracy/test', test_accuracy, epoch)
+            # 记录测试信息到 TensorBoard
+    writer.add_scalar('Loss/test', test_loss, epoch)
+    writer.add_scalar('Accuracy/test', test_accuracy, epoch)
 
-print(f"Test loss: {test_loss} test accuracy: {test_accuracy}")
+    print(f"Test loss: {test_loss} test accuracy: {test_accuracy}")
 
 writer.close()
 end_time = time.time()  # 记录结束时间

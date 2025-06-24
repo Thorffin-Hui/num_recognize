@@ -86,7 +86,7 @@ for epoch in range(100):
         # 步骤 2: step1 和 W2 矩阵相乘
         step2 = torch.einsum('ac,cd->ad', step1, W2)  # 矩阵乘法
         step2 = step2 + bias2  # 加上偏置
-
+        
         # 步骤 3: step2 和 W3 矩阵相乘
         step3 = torch.einsum('ad,de->ae', step2, W3)  # 矩阵乘法
         step3 = step3 + bias3  # 加上偏置
@@ -145,7 +145,7 @@ correct_test = 0
 total_test = 0
 running_test_loss = 0.0
 
-for epoch in range(10):
+for epoch in range(5):
     with torch.no_grad():  # No need to compute gradients during testing
         for inputs, labels in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
@@ -161,12 +161,12 @@ for epoch in range(10):
             
             running_test_loss += loss.item()
 
-test_accuracy = correct_test / total_test
-test_loss = running_test_loss / len(test_loader)
+    test_accuracy = correct_test / total_test
+    test_loss = running_test_loss / len(test_loader)
 
-# 记录测试信息到 TensorBoard
-writer.add_scalar('Loss/test', test_loss, epoch)
-writer.add_scalar('Accuracy/test', test_accuracy, epoch)
+    # 记录测试信息到 TensorBoard
+    writer.add_scalar('Loss/test', test_loss, epoch)
+    writer.add_scalar('Accuracy/test', test_accuracy, epoch)
 
 print(f"Test loss: {test_loss} test accuracy: {test_accuracy}")
 
